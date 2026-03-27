@@ -13,6 +13,7 @@ A continuación se desarrolla el Trabajo Práctico 1 de Manejo y Visualización 
 
 ### Carga de librerías.
 
+```{r}
 library(tidyverse)
 
 library(janitor)
@@ -20,19 +21,24 @@ library(janitor)
 library(stringr)
 
 library(forcats)
+```
 
 ### Carga de las bases de datos.
 
-internet_users <- read_csv("TP1/data/internet_users_world_wide.csv", skip = 4)
+```{r}
+```
 
-metadata_countries <- read_csv("TP1/data/metadata_countries_internet_users.csv")
+internet_users \<- read_csv("TP1/data/internet_users_world_wide.csv", skip = 4)
 
-indicator_description <- read_lines("TP1/data/indicator_description.txt")
+metadata_countries \<- read_csv("TP1/data/metadata_countries_internet_users.csv")
+
+indicator_description \<- read_lines("TP1/data/indicator_description.txt")
 
 ### Exploración de las bases de datos.
 
 #### Base de datos internet_users
 
+```{r}
 glimpse(internet_users)
 
 head(internet_users)
@@ -40,9 +46,11 @@ head(internet_users)
 dim(internet_users)
 
 names(internet_users)
+```
 
 #### Base de datos metadata_countries
 
+```{r}
 head(metadata_countries)
 
 dim(metadata_countries)
@@ -50,6 +58,7 @@ dim(metadata_countries)
 names(metadata_countries)
 
 glimpse(metadata_countries)
+```
 
 A partir de esta exploración inicial, se observa que la base principal cada año aparece como una columna distinta, mientras que las unidades de análisis corresponden a países o regiones geograficas Además, hay una columna residual vacía tanto en la base como la metadata. Esta ultima aportará variables muy relevantes para el análisis que se hará a continuación, especialmente `Region` e `IncomeGroup`.
 
@@ -61,16 +70,21 @@ A continuación se avanzará con la normalización de nombres, la remoción de c
 
 Para facilitar el trabajo posterior, se normalizarán los nombres de las columnas y se eliminarán columnas completamente vacías. Esto se hace a través de la función normalize_dataframe:
 
+```{r}
 normalize_dataframe <- function(dataframe) { dataframe |> clean_names() |> remove_empty(which = "cols") }
+```
 
 Aplico esta función a ambas bases de datos:
 
+```{r}
 internet_users_clean <- normalize_dataframe(internet_users)
 
 metadata_countries_clean <- normalize_dataframe(metadata_countries)
+```
 
 Chequeo que la función haya funcionado correctamente:
 
+```{r}
 names(internet_users_clean)
 
 dim(internet_users_clean)
@@ -78,19 +92,123 @@ dim(internet_users_clean)
 names(metadata_countries_clean)
 
 dim(metadata_countries_clean)
+```
 
 ### Transformación a formato largo
 
+```{r}
 internet_users_long <- internet_users_clean |> pivot_longer( cols = x1990:x2025, names_to = "year", values_to = "internet_users_pct" ) |> mutate(year = as.integer(str_remove(year, "^x")))
-
-internet_users_long <- internet_users_long |> mutate(year = as.integer(year))
 
 head(internet_users_long)
 
 dim(internet_users_long)
 
 glimpse(internet_users_long)
+```
 
-Esta normalización hace que ambas bases queden con nombres de variables gomogéneos y sin columnas scompletametamente vacías.La transformación de internet_users a long nos permite que cada fila represente una observación pais-año, que será mas comodo para filtrar y combinar la información con la metadata. 
+Esta normalización hace que ambas bases queden con nombres de variables gomogéneos y sin columnas scompletametamente vacías.La transformación de internet_users a long nos permite que cada fila represente una observación pais-año, que será mas comodo para filtrar y combinar la información con la metadata.
 
-Aclaración: uso str_remove(year, "^x") porque sino queda el año con una "x" al principio, lo que genera error al querer convertirlo a entero.
+Aclaración: uso str_remove(year, "\^x") porque sino queda el año con una "x" al principio, lo que genera error al querer convertirlo a entero.
+
+## Tratamiento de faltantes y cruce con metadata
+
+### Restricción del período de análisis
+
+En la hipótesis nos interesan unicamente los datos de 2013 a 2023, por lo que se filtrarán unicamente esos años.
+
+```{r}
+internet_users_2013_2023 <- internet_users_long |> filter(year >= 2013, year <= 2023)
+```
+
+Chequeo que el filtro haya funcionado correctamente:
+
+```{r}
+range(internet_users_2013_2023$year)
+
+dim(internet_users_2013_2023)
+
+head(internet_users_2013_2023)
+```
+
+### Identificación y tratamiento de NAs
+
+Ahora que el periodo ya está restringido. Vamos a revisar los datos faltantes de internet_users_pct, que es la variable que nos interesa para el análisis. En los casos con NAs en esta variable, se excluiran los datos unicamente cuando impidan realizar el análisis comparativo.
+
+```{r}
+sum(is.na(internet_users_2013_2023$internet_users_pct))
+
+internet_users_2013_2023 |> filter(is.na(internet_users_pct)) |> select(country_name, country_code, year, internet_users_pct) |> head(15)
+
+internet_users_no_na <- internet_users_2013_2023 |> filter(!is.na(internet_users_pct))
+```
+
+Checkeo y veo que se hayan eliminado los NAs correctamente:
+
+```{r}
+sum(is.na(internet_users_no_na$internet_users_pct))
+
+dim(internet_users_no_na)
+```
+
+### Cruce con metadata
+
+Ahora que ya tengo la base limpia, y esta en long, y sin NAs. Puedo cruzarlo con la metadata. Para sumar las variables descriptivas, indispensables para el análisis (region e income_group). Para esto hago un left_join() utilizando country_code como clave.
+
+```{r}
+internet_users_joined <- internet_users_no_na |> left_join(metadata_countries_clean, by = "country_code")
+```
+
+Chequeo que el join haya funcionado correctamente:
+
+```{r}
+head(internet_users_joined)
+
+dim(internet_users_joined)
+```
+
+Reviso que no haya quedado ningún NA en las variables descriptivas:
+
+```{r}
+internet_users_joined |> count(income_group, sort = TRUE)
+```
+
+Como hay NAs en income_group, me quedo solo con los casos "High income", "Low income", "Lower middle income" y "Upper middle income". Esto debido a que en la hipótesis compara exclusivamente esos grupos de ingreso, y los NAs se pueden estar dando por otros agregados regionales y otras clasificaciones.
+
+```{r}
+internet_users_income_groups <- internet_users_joined |>
+  filter(
+    income_group %in% c(
+      "Low income",
+      "Lower middle income",
+      "Upper middle income",
+      "High income"
+    )
+  )
+
+internet_users_income_groups |>
+  count(income_group, sort = TRUE)
+```
+
+Ahora que se tiene una base de datos limpia, con la variable de interés sin NAs, y con las variables descriptivas necesarias para el análisis comparativo entre grupos de ingreso.Lo que sigue es ordenar los grupos de ingreso para que tengan un orden jerárquico en las visualizaciones posteriores.
+
+```{r}
+internet_users_income_groups <- internet_users_income_groups |>
+  mutate(
+    income_group = factor(
+      income_group,
+      levels = c(
+        "Low income",
+        "Lower middle income",
+        "Upper middle income",
+        "High income"
+      )
+    )
+  )
+
+levels(internet_users_income_groups$income_group)
+
+internet_users_income_groups |>
+  count(income_group)
+```
+
+Después de restringir la base al período 2013–2023, se eliminaron solo los casos con valores faltantes en `internet_users_pct`. Luego, se hizo un `left_join()` con la metadata de países para incorporar `income_group`. Y por último, se conservaron únicamente las cuatro categorías de ingreso relevantes y se las ordenó jerárquicamente, dejando la base preparada para la agregación y construcción del resultado final del TP.
