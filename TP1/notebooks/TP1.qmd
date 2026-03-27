@@ -1,1 +1,96 @@
+---
+title: "Trabajo Práctico 1: Uso de internet mundial"
+author: "Juan Ignacio Gutiérrez"
+format: html
+editor: visual
+---
 
+## Objetivo
+
+A continuación se desarrolla el Trabajo Práctico 1 de Manejo y Visualización de Datos. El objetivo de este trabajo es preparar, transformar y resumir los datos provistos por el Banco Mundial sobre uso de internet a nivel mundial, de manera que permitan evaluar la hipótesis planteada sobre las diferencias entre grupos de ingreso en la última década.
+
+## Trabajo inicial
+
+### Carga de librerías.
+
+library(tidyverse)
+
+library(janitor)
+
+library(stringr)
+
+library(forcats)
+
+### Carga de las bases de datos.
+
+internet_users <- read_csv("TP1/data/internet_users_world_wide.csv", skip = 4)
+
+metadata_countries <- read_csv("TP1/data/metadata_countries_internet_users.csv")
+
+indicator_description <- read_lines("TP1/data/indicator_description.txt")
+
+### Exploración de las bases de datos.
+
+#### Base de datos internet_users
+
+glimpse(internet_users)
+
+head(internet_users)
+
+dim(internet_users)
+
+names(internet_users)
+
+#### Base de datos metadata_countries
+
+head(metadata_countries)
+
+dim(metadata_countries)
+
+names(metadata_countries)
+
+glimpse(metadata_countries)
+
+A partir de esta exploración inicial, se observa que la base principal cada año aparece como una columna distinta, mientras que las unidades de análisis corresponden a países o regiones geograficas Además, hay una columna residual vacía tanto en la base como la metadata. Esta ultima aportará variables muy relevantes para el análisis que se hará a continuación, especialmente `Region` e `IncomeGroup`.
+
+A continuación se avanzará con la normalización de nombres, la remoción de columnas vacías y la transformación de la base principal a formato largo como es indicado en la consigna.
+
+## Trabajo siguiente
+
+### Normalización de nombres y limpieza inicial
+
+Para facilitar el trabajo posterior, se normalizarán los nombres de las columnas y se eliminarán columnas completamente vacías. Esto se hace a través de la función normalize_dataframe:
+
+normalize_dataframe <- function(dataframe) { dataframe |> clean_names() |> remove_empty(which = "cols") }
+
+Aplico esta función a ambas bases de datos:
+
+internet_users_clean <- normalize_dataframe(internet_users)
+
+metadata_countries_clean <- normalize_dataframe(metadata_countries)
+
+Chequeo que la función haya funcionado correctamente:
+
+names(internet_users_clean)
+
+dim(internet_users_clean)
+
+names(metadata_countries_clean)
+
+dim(metadata_countries_clean)
+
+### Transformación a formato largo
+
+internet_users_long <- internet_users_clean |> pivot_longer( cols = x1990:x2025, names_to = "year", values_to = "internet_users_pct" ) |> mutate(year = as.integer(str_remove(year, "^x")))
+
+internet_users_long <- internet_users_long |> mutate(year = as.integer(year))
+
+head(internet_users_long)
+
+dim(internet_users_long)
+
+glimpse(internet_users_long)
+
+Esta normalización hace que ambas bases queden con nombres de variables gomogéneos y sin columnas scompletametamente vacías.La transformación de internet_users a long nos permite que cada fila represente una observación pais-año, que será mas comodo para filtrar y combinar la información con la metadata. 
+
+Aclaración: uso str_remove(year, "^x") porque sino queda el año con una "x" al principio, lo que genera error al querer convertirlo a entero.
