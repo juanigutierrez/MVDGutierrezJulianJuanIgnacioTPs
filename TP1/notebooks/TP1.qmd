@@ -185,7 +185,7 @@ internet_users_income_groups <- internet_users_joined |>
   )
 
 internet_users_income_groups |>
-  count(income_group, sort = TRUE)s
+  count(income_group, sort = TRUE)
 ```
 
 Ahora que se tiene una base de datos limpia, con la variable de interés sin NAs, y con las variables descriptivas necesarias para el análisis comparativo entre grupos de ingreso.Lo que sigue es ordenar los grupos de ingreso para que tengan un orden jerárquico en las visualizaciones posteriores.
@@ -244,7 +244,8 @@ resultado_hipotesis <- internet_users_summary |>
   pivot_wider(
     names_from = income_group,
     values_from = mean_internet_users_pct
-  ) |> mutate(indicator_name = "Internet users (% of population)") |> select(year, `Low income`, `Lower middle income`, `Upper middle income`, `High income`, indicator_name)
+  ) |> mutate(indicator_name = "Proporción de la población
+que usa internet (%)") |> select(year, `Low income`, `Lower middle income`, `Upper middle income`, `High income`, indicator_name)
 
 head(resultado_hipotesis)
 
