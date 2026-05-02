@@ -19,8 +19,6 @@ library(tidyverse)
 library(janitor)
 
 library(stringr)
-
-library(forcats)
 ```
 
 ### Carga de las bases de datos.
@@ -70,7 +68,10 @@ A continuación se avanzará con la normalización de nombres, la remoción de c
 Para facilitar el trabajo posterior, se normalizarán los nombres de las columnas y se eliminarán columnas completamente vacías. Esto se hace a través de la función `normalize_dataframe`:
 
 ```{r}
-normalize_dataframe <- function(dataframe) { dataframe |> clean_names() |> remove_empty(which = "cols") }
+normalize_dataframe <- function(dataframe) { 
+  dataframe |> 
+    clean_names() |> 
+    remove_empty(which = "cols") }
 ```
 
 Aplico esta función a ambas bases de datos:
@@ -244,8 +245,7 @@ resultado_hipotesis <- internet_users_summary |>
   pivot_wider(
     names_from = income_group,
     values_from = mean_internet_users_pct
-  ) |> mutate(indicator_name = "Proporción de la población
-que usa internet (%)") |> select(year, `Low income`, `Lower middle income`, `Upper middle income`, `High income`, indicator_name)
+  ) |> mutate(indicator_name = indicator_description[2]) |> select(year, `Low income`, `Lower middle income`, `Upper middle income`, `High income`, indicator_name)
 
 head(resultado_hipotesis)
 
@@ -260,4 +260,31 @@ Ya contruida la tabla y verificado que tenga el formato correcto, se exporta a u
 write_csv(resultado_hipotesis, "../output/resultado_hipotesis.csv")
 ```
 
+\### Crecimiento entre 2013 y 2023
 
+```{r}
+### Tabla adicional: crecimiento entre 2013 y 2023
+
+tabla_crecimiento_hipotesis <- internet_users_summary |>
+  filter(year %in% c(2013, 2023)) |>
+  pivot_wider(
+    names_from = year,
+    values_from = mean_internet_users_pct
+  ) |>
+  mutate(
+    crecimiento_puntos_porcentuales = `2023` - `2013`,
+    crecimiento_porcentual = ((`2023` - `2013`) / `2013`) * 100
+  ) |>
+  select(
+    income_group,
+    `2013`,
+    `2023`,
+    crecimiento_puntos_porcentuales,
+    crecimiento_porcentual
+  ) |>
+  arrange(income_group)
+
+tabla_crecimiento_hipotesis
+```
+
+A partir de los resultados observados podemos concluir que todos los grupos de ingreso aumentaron su nivel promedio de uso de internet entre 2013 y 2023. Pero los grupos de menor ingreso tuvieron un crecimiento relativo mucho mas alto que el de los grupos de ingresos altos; aunque en terminos absolutos los grupos de ingresos altos tienen niveles más elevados de acceso a internet en terminos absolutos. Es por ello que podemos verificar la hipótesis, porque los grupos de menores ingresos presentan una tsasa de crecimiento porcentual superior, aunque continuen por debajo de los grupos de mayores ingresos.
