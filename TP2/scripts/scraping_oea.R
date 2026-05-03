@@ -6,9 +6,7 @@
 
 ######################### 
 
-# Carga de dim(comunicados_oea)
-sum(is.na(comunicados_oea$cuerpo))
-head(comunicados_oea)librerías
+# Carga de librerías
 library(rvest)
 library(dplyr)
 library(purrr)
