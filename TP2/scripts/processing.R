@@ -6,7 +6,7 @@
 
 #########################
 
-# Invocar librerías
+# Carga de librerías
 library(dplyr)
 library(stringr)
 library(here)
