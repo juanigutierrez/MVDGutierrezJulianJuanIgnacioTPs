@@ -13,6 +13,20 @@ library(purrr)
 library(here)
 library(xml2)
 
+# Crear estructura de carpetas
+dir.create(here("TP2"))
+dir.create(here("TP2", "notebooks"))
+dir.create(here("TP2", "data"))
+dir.create(here("TP2", "scripts"))
+dir.create(here("TP2", "output"))
+
+# Crear archivos de scripts y notebooks
+file.create(here("TP2", "scripts", "scraping_oea.R"))
+file.create(here("TP2", "scripts", "processing.R"))
+file.create(here("TP2", "scripts", "metrics_figures.R"))
+
+file.create(here("TP2", "notebooks", "informe_oea.qmd"))
+
 # Defino los meses a scrapear
 meses_oea <- tibble(
   numero_mes = c(1, 2, 3, 4),

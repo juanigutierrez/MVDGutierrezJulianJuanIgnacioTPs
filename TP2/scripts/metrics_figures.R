@@ -64,8 +64,18 @@ terminos_relevantes <- c(
   "observación"
 )
 
+# Pasar la DTM a formato largo para calcular frecuencias desde la matriz
+dtm_larga <- dtm_oea |>
+  pivot_longer(
+    cols = -id,
+    names_to = "lemma",
+    values_to = "frecuencia"
+  )
+
+head(dtm_larga)
+
 # Filtrar y condensar frecuencia total de los términos seleccionados
-frecuencia_terminos <- frecuencia_por_comunicado |>
+frecuencia_terminos <- dtm_larga |>
   filter(lemma %in% terminos_relevantes) |>
   group_by(lemma) |>
   summarise(
