@@ -1,0 +1,202 @@
+---
+title: "Trabajo Práctico Nº 3: Regresión logística"
+subtitle: "Análisis de ingresos altos en el Adult Census Income Dataset"
+author: "Juan Ignacio Gutierrez Julian"
+date: "`r Sys.Date()`"
+lang: es
+execute:
+  echo: true
+  output: true
+  eval: true
+  warning: false
+  message: false
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-title: "Contenidos"
+    embed-resources: true
+    theme: cosmo
+    code-fold: false
+    code-tools: true
+    df-print: paged
+    include-in-header:
+      text: |
+        <style>
+        body {
+          text-align: justify;
+          font-size: 16px;
+          line-height: 1.6;
+        }
+        h1, h2, h3 {
+          color: #2C3E50;
+        }
+        .callout {
+          margin-top: 1.5em;
+          margin-bottom: 1.5em;
+        }
+        </style>
+---
+
+::: callout-note
+**Objetivo del trabajo**
+
+Este trabajo práctico analiza qué variables sociodemográficas y laborales se asocian con la probabilidad de que una persona tenga ingresos anuales superiores a **\$50.000 dólares** en el dataset `adult_census_USA.csv`. Para ello, se trabajará con una regresión logística binomial, tomando como variable dependiente `income`, que distingue entre personas con ingresos `<=50K` y personas con ingresos `>50K`.
+:::
+
+# Preparación, carga y limpieza inicial de datos
+
+## Carga de paquetes
+
+```{r}
+#| label: paquetes
+#| warning: false
+#| message: false
+
+# Instalo pacman, para cargar todos los paquetes necesarios de forma ordenada.
+if (!require("pacman")) install.packages("pacman")
+
+pacman::p_load(
+  tidyverse,        
+  here,             
+  janitor,          
+  broom,            
+  modelsummary,     
+  marginaleffects,  
+  scales,           
+  kableExtra        
+)
+```
+
+## Carga de la base de datos cruda
+
+```{r}
+#| label: carga-datos
+#| warning: false
+#| message: false
+
+# Cargo la base original desde la carpeta TP3/data.
+datos_raw <- read_csv(here("TP3", "data", "adult_census_USA.csv"))
+
+# Reviso dimensiones generales de la base original.
+dim(datos_raw)
+
+# Reviso los nombres originales de las variables.
+names(datos_raw)
+
+# Reviso la estructura general de la base.
+glimpse(datos_raw)
+```
+
+## Normalización de nombres y revisión inicial
+
+```{r}
+#| label: normalizacion-nombres
+#| warning: false
+#| message: false
+
+# Creo una primera versión de la base con nombres normalizados.
+datos_base <- datos_raw |> 
+  clean_names()
+
+# Reviso cómo quedaron los nombres después de la limpieza.
+names(datos_base)
+
+```
+## Limpieza inicial de variables de texto
+
+```{r}
+#| label: limpieza-texto
+#| warning: false
+#| message: false
+
+# Antes de transformar income, reviso sus valores originales.
+datos_base |> 
+  count(income, sort = TRUE)
+```
+
+```{r}
+#| label: limpieza-inicial
+#| warning: false
+#| message: false
+
+# Creo la base final
+datos <- datos_base |> 
+  
+  # Limpio espacios innecesarios en todas las variables de texto.
+  # También convierto los signos "?" en valores perdidos
+  mutate(
+    across(where(is.character), ~ na_if(str_trim(.x), "?"))
+  ) |> 
+  
+  # Limpio income y la convierto en factor.
+  # <=50K queda como categoría de referencia y >50K queda como la categoría cuya probabilidad vamos a modelar.
+  mutate(
+    income = str_remove(income, "\\.$"),
+    income = factor(income, levels = c("<=50K", ">50K")),
+    
+    # Creo una versión numérica auxiliar de la variable dependiente, para calcular proporciones y hacer gráficos.
+    income_num = if_else(income == ">50K", 1, 0)
+  )
+
+# Verifico que los niveles hayan quedado en el orden correcto.
+levels(datos$income)
+
+# Reviso nuevamente la estructura de la base limpia.
+glimpse(datos)
+```
+
+# Balance de la variable dependiente
+
+```{r}
+#| label: balance-income-tabla
+#| warning: false
+#| message: false
+
+# Calculo la cantidad y proporción de observaciones en cada categoría de ingreso.
+balance_income <- datos |> 
+  count(income) |> 
+  mutate(
+    prop = n / sum(n),
+    porcentaje = percent(prop, accuracy = 0.1)
+  )
+
+balance_income |> 
+  knitr::kable(
+    col.names = c("Ingreso", "Cantidad", "Proporción", "Porcentaje"),
+    caption = "Distribución de la variable dependiente"
+  ) |> 
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+#| label: balance-income-grafico
+#| warning: false
+#| message: false
+
+# Grafico la distribución de income para verificar si la variable objetivo está balanceada.
+ggplot(balance_income, aes(x = income, y = prop, fill = income)) +
+  geom_col(width = 0.6, alpha = 0.85) +
+  geom_text(aes(label = porcentaje), vjust = -0.4) +
+  scale_y_continuous(
+    labels = percent_format(),
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "Distribución de la variable dependiente",
+    subtitle = "Proporción de observaciones según nivel de ingreso",
+    x = "Nivel de ingreso",
+    y = "Proporción de observaciones",
+    fill = "Ingreso"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none"
+  )
+```
+
+::: callout-note
+**Lectura inicial del balance**
+
+La variable dependiente `income` permite distinguir entre personas con ingresos anuales menores o iguales a **\$50.000 dólares** y personas con ingresos superiores a ese umbral. Este análisis inicial es necesario porque la regresión logística modelará la probabilidad de pertenecer a la segunda categoría, es decir, `>50K`. Por lo tanto, antes de avanzar con las variables explicativas, conviene observar si esa categoría aparece en una proporción similar a `<=50K` o si se encuentra menos representada dentro de la base.
+:::
