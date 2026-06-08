@@ -120,7 +120,7 @@ datos_base |>
 #| warning: false
 #| message: false
 
-# Creo la base final
+# Creo la base inicial
 datos <- datos_base |> 
   
   # Limpio espacios innecesarios en todas las variables de texto.
@@ -200,3 +200,528 @@ ggplot(balance_income, aes(x = income, y = prop, fill = income)) +
 
 La variable dependiente `income` permite distinguir entre personas con ingresos anuales menores o iguales a **\$50.000 dólares** y personas con ingresos superiores a ese umbral. Este análisis inicial es necesario porque la regresión logística modelará la probabilidad de pertenecer a la segunda categoría, es decir, `>50K`. Por lo tanto, antes de avanzar con las variables explicativas, conviene observar si esa categoría aparece en una proporción similar a `<=50K` o si se encuentra menos representada dentro de la base.
 :::
+
+# Selección de variables y construcción de la base de modelado
+
+```{r}
+#| label: seleccion-variables
+#| warning: false
+#| message: false
+
+# Creo la base que será utilizada para el análisis exploratorio y los modelos. Mantengo una cantidad reducida de variables para que el modelo sea interpretable.
+datos_modelo <- datos |> 
+  
+  # Recodifico variables categóricas para reducir categorías y facilitar la interpretación.
+  mutate(
+    
+    # Simplifico marital_status en dos grupos:
+    # married incluye los estados civiles "Married".
+    # not_married agrupa el resto de las situaciones.
+    marital_simple = case_when(
+      str_detect(marital_status, "^Married") ~ "married",
+      TRUE ~ "not_married"
+    ),
+    
+    # Simplifico race en White y Other
+    race_simple = case_when(
+      race == "White" ~ "White",
+      TRUE ~ "Other"
+    ),
+    
+    # Simplifico native_country en United States y Other.
+    native_country_simple = case_when(
+      native_country == "United-States" ~ "United States",
+      TRUE ~ "Other"
+    ),
+    
+    # Defino los factores y sus categorías de referencia.
+    # En income, <=50K ya quedó como referencia en la primera parte.
+    # En sex, Female queda como referencia para comparar Male contra Female.
+    sex = factor(sex),
+    sex = fct_relevel(sex, "Female"),
+    
+    marital_simple = factor(
+      marital_simple,
+      levels = c("not_married", "married")
+    ),
+    
+    race_simple = factor(
+      race_simple,
+      levels = c("White", "Other")
+    ),
+    
+    native_country_simple = factor(
+      native_country_simple,
+      levels = c("United States", "Other")
+    ),
+    
+    # Transformo capital_gain y capital_loss con log1p.
+    # log1p(x) equivale a log(x + 1), por lo que permite trabajar con valores iguales a cero.
+    log_capital_gain = log1p(capital_gain),
+    log_capital_loss = log1p(capital_loss)
+  ) |> 
+  
+  # Selecciono únicamente las variables que se van a utilizar.
+  select(
+    income,
+    income_num,
+    age,
+    education_num,
+    sex,
+    marital_simple,
+    race_simple,
+    hours_per_week,
+    capital_gain,
+    capital_loss,
+    log_capital_gain,
+    log_capital_loss,
+    native_country_simple
+  ) |> 
+  
+  # Elimino observaciones con valores perdidos en las variables seleccionadas.
+  filter(
+    if_all(everything(), ~ !is.na(.))
+  )
+
+# Reviso dimensiones de la base original limpia y de la base de modelado.
+tibble(
+  base = c("Base limpia inicial", "Base de modelado"),
+  observaciones = c(nrow(datos), nrow(datos_modelo)),
+  variables = c(ncol(datos), ncol(datos_modelo))
+) |> 
+  knitr::kable(
+    caption = "Comparación entre la base limpia inicial y la base utilizada para modelar"
+  ) |> 
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+#| label: niveles-referencia
+#| warning: false
+#| message: false
+
+# Reviso las categorías de referencia de las variables factor. Al ser una regresión logística, la primera categoría será la de referencia.
+niveles_referencia <- tibble(
+  variable = c(
+    "income",
+    "sex",
+    "marital_simple",
+    "race_simple",
+    "native_country_simple"
+  ),
+  categoria_referencia = c(
+    levels(datos_modelo$income)[1],
+    levels(datos_modelo$sex)[1],
+    levels(datos_modelo$marital_simple)[1],
+    levels(datos_modelo$race_simple)[1],
+    levels(datos_modelo$native_country_simple)[1]
+  )
+)
+
+niveles_referencia |> 
+  knitr::kable(
+    col.names = c("Variable", "Categoría de referencia"),
+    caption = "Categorías de referencia para las variables categóricas"
+  ) |> 
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+#| label: faltantes-modelo
+#| warning: false
+#| message: false
+
+# Verifico que no queden valores perdidos en la base de modelado.
+datos_modelo |> 
+  summarise(
+    across(
+      everything(),
+      ~ sum(is.na(.))
+    )
+  ) |> 
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "faltantes"
+  ) |> 
+  arrange(desc(faltantes)) |> 
+  knitr::kable(
+    col.names = c("Variable", "Valores perdidos"),
+    caption = "Valores perdidos en la base de modelado"
+  ) |> 
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+#| label: balance-modelo
+#| warning: false
+#| message: false
+
+# Vuelvo a verificar el balance de income después de seleccionar variables y eliminar faltantes.
+balance_modelo <- datos_modelo |> 
+  count(income) |> 
+  mutate(
+    prop = n / sum(n),
+    porcentaje = percent(prop, accuracy = 0.1)
+  )
+
+balance_modelo |> 
+  knitr::kable(
+    col.names = c("Ingreso", "Cantidad", "Proporción", "Porcentaje"),
+    caption = "Distribución de income en la base de modelado"
+  ) |> 
+  kable_styling(full_width = FALSE)
+```
+
+# Análisis exploratorio
+
+Antes de ajustar los modelos, conviene mirar cómo se comportan las variables seleccionadas frente a `income`. Esta revisión me sirve para detectar patrones generales, evaluar si conviene realizar alguna transformación y dejar mejor fundamentada la especificación del modelo logístico.
+
+## Variables continuas e ingreso
+
+```{r}
+#| label: grafico-age-income
+#| warning: false
+#| message: false
+
+# Comparo la distribución de edad entre los dos grupos de ingreso.
+ggplot(datos_modelo, aes(x = income, y = age, fill = income)) +
+  geom_boxplot(alpha = 0.85) +
+  labs(
+    title = "Edad según nivel de ingreso",
+    subtitle = "Comparación entre personas con ingresos <=50K y >50K",
+    x = "Nivel de ingreso",
+    y = "Edad",
+    fill = "Ingreso"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none"
+  )
+```
+
+```{r}
+#| label: grafico-education-income
+#| warning: false
+#| message: false
+
+# Comparo la distribución de education_num según nivel de ingreso.
+ggplot(datos_modelo, aes(x = income, y = education_num, fill = income)) +
+  geom_boxplot(alpha = 0.85) +
+  labs(
+    title = "Nivel educativo según nivel de ingreso",
+    subtitle = "education_num resume el nivel educativo alcanzado",
+    x = "Nivel de ingreso",
+    y = "Nivel educativo",
+    fill = "Ingreso"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none"
+  )
+```
+
+```{r}
+#| label: grafico-hours-income
+#| warning: false
+#| message: false
+
+# Comparo la distribución de horas trabajadas por semana según nivel de ingreso.
+ggplot(datos_modelo, aes(x = income, y = hours_per_week, fill = income)) +
+  geom_boxplot(alpha = 0.85) +
+  labs(
+    title = "Horas trabajadas por semana según nivel de ingreso",
+    subtitle = "Distribución de hours_per_week por categoría de income",
+    x = "Nivel de ingreso",
+    y = "Horas trabajadas por semana",
+    fill = "Ingreso"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none"
+  )
+```
+
+## Variables categóricas e ingreso
+
+```{r}
+#| label: grafico-categoricas-income
+#| warning: false
+#| message: false
+
+# Calculo la proporción de personas con ingresos >50K dentro de cada categoría.
+proporcion_categoricas <- bind_rows(
+  
+  datos_modelo |> 
+    group_by(sex) |> 
+    summarise(
+      prop_ingreso_alto = mean(income_num),
+      n = n(),
+      .groups = "drop"
+    ) |> 
+    transmute(
+      variable = "Sexo",
+      categoria = as.character(sex),
+      prop_ingreso_alto,
+      n
+    ),
+  
+  datos_modelo |> 
+    group_by(marital_simple) |> 
+    summarise(
+      prop_ingreso_alto = mean(income_num),
+      n = n(),
+      .groups = "drop"
+    ) |> 
+    transmute(
+      variable = "Estado civil",
+      categoria = as.character(marital_simple),
+      prop_ingreso_alto,
+      n
+    ),
+  
+  datos_modelo |> 
+    group_by(race_simple) |> 
+    summarise(
+      prop_ingreso_alto = mean(income_num),
+      n = n(),
+      .groups = "drop"
+    ) |> 
+    transmute(
+      variable = "Raza",
+      categoria = as.character(race_simple),
+      prop_ingreso_alto,
+      n
+    ),
+  
+  datos_modelo |> 
+    group_by(native_country_simple) |> 
+    summarise(
+      prop_ingreso_alto = mean(income_num),
+      n = n(),
+      .groups = "drop"
+    ) |> 
+    transmute(
+      variable = "País de origen",
+      categoria = as.character(native_country_simple),
+      prop_ingreso_alto,
+      n
+    )
+)
+
+proporcion_categoricas |> 
+  mutate(
+    porcentaje = percent(prop_ingreso_alto, accuracy = 0.1)
+  ) |> 
+  knitr::kable(
+    col.names = c("Variable", "Categoría", "Proporción de ingresos >50K", "Cantidad", "Porcentaje"),
+    caption = "Proporción de ingresos altos por categoría"
+  ) |> 
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+#| label: grafico-proporcion-categoricas
+#| warning: false
+#| message: false
+
+# Grafico la proporción de ingresos altos en cada categoría.
+ggplot(
+  proporcion_categoricas,
+  aes(x = reorder(categoria, prop_ingreso_alto), y = prop_ingreso_alto)
+) +
+  geom_col(alpha = 0.85) +
+  geom_text(
+    aes(label = percent(prop_ingreso_alto, accuracy = 0.1)),
+    hjust = -0.1,
+    size = 3
+  ) +
+  coord_flip() +
+  facet_wrap(~ variable, scales = "free_y") +
+  scale_y_continuous(
+    labels = percent_format(),
+    limits = c(0, max(proporcion_categoricas$prop_ingreso_alto) + 0.08)
+  ) +
+  labs(
+    title = "Proporción de personas con ingresos >50K por categoría",
+    x = "Categoría",
+    y = "Proporción con ingresos >50K"
+  ) +
+  theme_minimal()
+```
+
+# Decisiones de transformación
+
+Al revisar `capital_gain` y `capital_loss`, vemos que la mayoría de los casos queda en cero y solo una parte menor registra valores positivos, algunos de ellos muy altos. Por eso, trabajar con la escala original puede hacer que esos valores extremos pesen demasiado en el análisis. Para evitarlo, uso `log1p()`, que es equivalente a `log(x + 1)`, lo que me permite transformar la variable sin perder las observaciones que tienen valor cero.
+
+```{r}
+#| label: resumen-capital
+#| warning: false
+#| message: false
+
+# Resumo las variables de capital antes y después de la transformación logarítmica.
+datos_modelo |> 
+  summarise(
+    capital_gain_min = min(capital_gain),
+    capital_gain_media = mean(capital_gain),
+    capital_gain_mediana = median(capital_gain),
+    capital_gain_max = max(capital_gain),
+    capital_loss_min = min(capital_loss),
+    capital_loss_media = mean(capital_loss),
+    capital_loss_mediana = median(capital_loss),
+    capital_loss_max = max(capital_loss)
+  ) |> 
+  pivot_longer(
+    cols = everything(),
+    names_to = "estadistico",
+    values_to = "valor"
+  ) |> 
+  knitr::kable(
+    caption = "Resumen de capital_gain y capital_loss antes de la transformación"
+  ) |> 
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+#| label: grafico-transformaciones-capital
+#| warning: false
+#| message: false
+
+# Paso las variables de capital a formato largo para comparar distribuciones.
+capital_largo <- datos_modelo |> 
+  select(
+    capital_gain,
+    capital_loss,
+    log_capital_gain,
+    log_capital_loss
+  ) |> 
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+# Grafico la distribución de las variables originales y transformadas.
+ggplot(capital_largo, aes(x = valor)) +
+  geom_histogram(bins = 40, alpha = 0.85) +
+  facet_wrap(~ variable, scales = "free") +
+  labs(
+    title = "Distribución de variables de capital antes y después de log1p",
+    x = "Valor",
+    y = "Cantidad de observaciones"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+#| label: grafico-capital-income
+#| warning: false
+#| message: false
+
+# Comparo las variables transformadas según nivel de ingreso.
+datos_modelo |> 
+  select(income, log_capital_gain, log_capital_loss) |> 
+  pivot_longer(
+    cols = c(log_capital_gain, log_capital_loss),
+    names_to = "variable",
+    values_to = "valor"
+  ) |> 
+  ggplot(aes(x = income, y = valor, fill = income)) +
+  geom_boxplot(alpha = 0.85) +
+  facet_wrap(~ variable, scales = "free_y") +
+  labs(
+    title = "Variables de capital transformadas según nivel de ingreso",
+    x = "Nivel de ingreso",
+    y = "Valor transformado con log1p",
+    fill = "Ingreso"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none"
+  )
+```
+
+::: callout-note
+**Sobre la transformación**
+
+Como `capital_gain` y `capital_loss` tienen muchos valores en cero y algunos valores positivos muy altos, se usa `log1p()` para reducir el peso de los extremos sin perder esas observaciones. Esta función equivale a `log(x + 1)`, por lo que permite trabajar correctamente con valores iguales a cero.
+:::
+
+# Término de interacción propuesto
+
+Además del modelo base, incluyo una interacción entre `sex` y `hours_per_week`. Para saber si trabajar más horas por semana se asocia con la misma probabilidad de superar los **$50.000 dólares** anuales para hombres y mujeres. Como esa relación puede variar por diferencias en inserción laboral, tipos de ocupación y acceso a puestos mejor remunerados, el segundo modelo permite evaluar la relación entre horas trabajadas y probabilidad de ingresos altos temiendo en cuenta el sexo.
+
+# Ajuste de modelos de regresión logística
+
+La variable dependiente es `income`. Dado que `<=50K` quedó como categoría de referencia y `>50K` como categoría a predecir, los modelos estiman la probabilidad de que una persona pertenezca al grupo de ingresos superiores a **$50.000 dólares** anuales.
+
+## Modelo 1: modelo base sin interacción
+
+```{r}
+#| label: modelo-1
+#| warning: false
+#| message: false
+
+# Ajusto un modelo logístico base sin interacción.
+modelo_1 <- glm(
+  income ~ age +
+    education_num +
+    sex +
+    marital_simple +
+    race_simple +
+    hours_per_week +
+    log_capital_gain +
+    log_capital_loss +
+    native_country_simple,
+  data = datos_modelo,
+  family = binomial(link = "logit")
+)
+
+# Reviso el resumen del modelo base.
+summary(modelo_1)
+```
+
+## Modelo 2: modelo con interacción
+
+```{r}
+#| label: modelo-2
+#| warning: false
+#| message: false
+
+# Ajusto un segundo modelo logístico con los mismos predictores del modelo base,pero incorporando una interacción entre sex y hours_per_week.
+modelo_2 <- glm(
+  income ~ age +
+    education_num +
+    sex * hours_per_week +
+    marital_simple +
+    race_simple +
+    log_capital_gain +
+    log_capital_loss +
+    native_country_simple,
+  data = datos_modelo,
+  family = binomial(link = "logit")
+)
+
+# Reviso el resumen del modelo interactivo.
+summary(modelo_2)
+```
+
+```{r}
+#| label: tabla-modelos-inicial
+#| warning: false
+#| message: false
+
+# Presento una primera tabla con ambos modelos.
+modelsummary(
+  list(
+    "Modelo 1: base" = modelo_1,
+    "Modelo 2: interacción" = modelo_2
+  ),
+  estimate = "{estimate}",
+  statistic = "({std.error})",
+  stars = TRUE,
+  output = "kableExtra",
+  gof_omit = "IC|Log|Adj|RMSE"
+) |> 
+  kable_styling(full_width = FALSE)
+```
