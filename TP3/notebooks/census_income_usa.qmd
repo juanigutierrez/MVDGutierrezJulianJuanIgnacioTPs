@@ -652,11 +652,35 @@ Como `capital_gain` y `capital_loss` tienen muchos valores en cero y algunos val
 
 # Término de interacción propuesto
 
-Además del modelo base, incluyo una interacción entre `sex` y `hours_per_week` para evaluar si trabajar más horas por semana se asocia con la misma probabilidad de superar los **\$50.000 dólares** anuales en hombres y mujeres. La relación entre horas trabajadas e ingresos puede variar por diferencias en inserción laboral, tipos de ocupación y acceso a puestos mejor remunerados. Por eso, el segundo modelo permite observar si la asociación entre `hours_per_week` e ingresos altos cambia al tener en cuenta el sexo.
+Además del modelo base, incluyo una interacción entre `sex` y `hours_per_week` para evaluar si la relación entre horas trabajadas por semana e ingresos altos se comporta igual en hombres y mujeres. La hipótesis detrás de esta decisión es que una mayor cantidad de horas trabajadas no necesariamente se traduce de la misma manera en la probabilidad de superar los **\$50.000 dólares** anuales, porque pueden existir diferencias en inserción laboral, tipo de ocupación, remuneración horaria y acceso a puestos mejor pagos.
+
+Antes de incorporar esa interacción al modelo, observo visualmente la distribución de `hours_per_week` según `income`, separando el análisis por sexo. Esta visualización permite verificar si la distancia entre ingresos bajos e ingresos altos en las horas trabajadas presenta patrones distintos entre mujeres y varones.
+
+```{r}
+#| label: grafico-interaccion-hours-sex
+#| warning: false
+#| message: false
+
+# Grafico la distribución de hours_per_week por nivel de ingreso,
+# separando la comparación entre mujeres y varones.
+ggplot(datos_modelo, aes(x = hours_per_week, fill = income)) +
+  geom_density(alpha = 0.35) +
+  facet_wrap(~ sex) +
+  labs(
+    title = "Distribución de horas trabajadas por semana según ingreso y sexo",
+    subtitle = "Comparación entre ingresos <=50K y >50K, con facetas por sexo",
+    x = "Horas trabajadas por semana",
+    y = "Densidad",
+    fill = "Nivel de ingreso"
+  ) +
+  theme_minimal()
+```
+
+El gráfico muestra que la distribución de `hours_per_week` no es idéntica entre los grupos de ingreso ni entre sexos. En ambos paneles, las personas con ingresos superiores a **\$50.000 dólares** tienden a concentrarse en valores relativamente más altos de horas trabajadas. Sin embargo, la comparación por sexo permite observar que esa diferencia no necesariamente tiene la misma forma en mujeres y varones. Por eso, la interacción entre `sex` y `hours_per_week` queda justificada tanto teóricamente como a partir de la exploración visual.
 
 # Ajuste de modelos de regresión logística
 
-La variable dependiente es `income`. Dado que `<=50K` quedó como categoría de referencia y `>50K` como categoría a predecir, los modelos estiman la probabilidad de que una persona pertenezca al grupo de ingresos superiores a **\$50.000 dólares** anuales.
+La variable dependiente es `income`. Como `<=50K` quedó definida como categoría de referencia y `>50K` como segunda categoría del factor, los modelos estiman la probabilidad de que una persona pertenezca al grupo de ingresos superiores a **\$50.000 dólares** anuales.
 
 ## Modelo 1: modelo base sin interacción
 
@@ -691,7 +715,8 @@ summary(modelo_1)
 #| warning: false
 #| message: false
 
-# Ajusto un segundo modelo logístico con los mismos predictores del modelo base,pero incorporando una interacción entre sex y hours_per_week.
+# Ajusto un segundo modelo logístico con los mismos predictores del modelo base,
+# pero incorporando una interacción entre sex y hours_per_week.
 modelo_2 <- glm(
   income ~ age +
     education_num +
@@ -714,7 +739,7 @@ summary(modelo_2)
 #| warning: false
 #| message: false
 
-# Presento una primera tabla con ambos modelos.
+# Presento una primera tabla comparativa con ambos modelos.
 modelsummary(
   list(
     "Modelo 1: base" = modelo_1,
@@ -729,9 +754,11 @@ modelsummary(
   kable_styling(full_width = FALSE)
 ```
 
-# Interpretación de resultados
+El **Modelo 1** estima la asociación entre cada predictor y la probabilidad de tener ingresos superiores a **\$50.000 dólares**, manteniendo constantes las demás variables. El **Modelo 2** conserva los mismos predictores, pero agrega la interacción entre `sex` y `hours_per_week`. Por lo tanto, permite evaluar si la relación entre horas trabajadas e ingresos altos varía según el sexo.
 
-A partir de los dos modelos ajustados, la interpretación se concentra en el Modelo 2, que incorpora la interacción entre `sex` y `hours_per_week`. Para leer los resultados uso dos medidas: los efectos marginales promedio, que expresan cambios en probabilidad, y los odds ratios, que permiten interpretar los coeficientes en términos de chances.
+# Interpretación de resultados y efectos marginales
+
+A partir de los dos modelos ajustados, la interpretación se concentra en el **Modelo 2**, porque es el que incorpora la interacción planteada en la hipótesis. Para facilitar la lectura, primero presento los efectos marginales promedio y luego los odds ratios.
 
 ## Efectos marginales promedio
 
@@ -800,7 +827,49 @@ ame_tabla |>
   kable_styling(full_width = FALSE)
 ```
 
-Los efectos marginales promedio permiten leer el modelo en una escala más intuitiva que la de los coeficientes logísticos. En lugar de expresar el resultado en log odds, la tabla muestra cuántos puntos porcentuales cambia, en promedio, la probabilidad de superar los **$50.000 dólares** anuales ante cambios en cada variable. En las variables continuas, el efecto corresponde a una unidad adicional; en las categóricas, a la diferencia respecto de la categoría de referencia.
+Los efectos marginales promedio permiten interpretar los resultados en términos de cambios en probabilidad. En las variables continuas, el efecto indica cuánto cambia, en promedio, la probabilidad de tener ingresos superiores a **\$50.000 dólares** ante una unidad adicional de la variable. En las variables categóricas, el efecto expresa la diferencia promedio respecto de la categoría de referencia.
+
+## Efecto marginal de las horas trabajadas según sexo
+
+```{r}
+#| label: efectos-hours-sex
+#| warning: false
+#| message: false
+
+# Como el Modelo 2 incluye una interacción entre sex y hours_per_week,
+# calculo el efecto marginal promedio de hours_per_week por separado para cada sexo.
+efectos_hours_sex <- avg_slopes(
+  modelo_2,
+  variables = "hours_per_week",
+  by = "sex",
+  type = "response"
+) |> 
+  as_tibble() |> 
+  transmute(
+    sexo = sex,
+    efecto_pp = round(estimate * 100, 3),
+    error_estandar = round(std.error * 100, 3),
+    ic_95_inferior = round(conf.low * 100, 3),
+    ic_95_superior = round(conf.high * 100, 3),
+    p_valor = format.pval(p.value, digits = 3, eps = 0.001)
+  )
+
+efectos_hours_sex |> 
+  knitr::kable(
+    col.names = c(
+      "Sexo",
+      "Efecto de una hora adicional en p.p.",
+      "Error estándar",
+      "IC 95% inferior",
+      "IC 95% superior",
+      "p valor"
+    ),
+    caption = "Efecto marginal promedio de hours_per_week según sexo"
+  ) |> 
+  kable_styling(full_width = FALSE)
+```
+
+Esta tabla permite leer la interacción de manera más directa. Si el efecto marginal de `hours_per_week` difiere entre mujeres y varones, eso indica que una hora adicional de trabajo semanal no se asocia con el mismo cambio promedio en la probabilidad de pertenecer al grupo `>50K` para ambos sexos.
 
 ## Odds ratios del Modelo 2
 
@@ -830,7 +899,7 @@ odds_ratios <- tidy(modelo_2) |>
       term == "log_capital_gain" ~ "Capital gain, log",
       term == "log_capital_loss" ~ "Capital loss, log",
       term == "native_country_simpleOther" ~ "País de origen: Other",
-      term == "sexMale:hours_per_week" ~ "Interacción: Male y horas",
+      str_detect(term, "sexMale") & str_detect(term, "hours_per_week") ~ "Interacción: Male y horas",
       TRUE ~ term
     )
   )
@@ -856,13 +925,7 @@ odds_ratios |>
   kable_styling(full_width = FALSE)
 ```
 
-Los odds ratios muestran una asociación clara entre varias variables del modelo y la probabilidad de tener ingresos altos. El nivel educativo es uno de los predictores más importantes: cada aumento de una unidad en `education_num` multiplica las chances de superar los **$50.000 dólares** por aproximadamente **1,46**, manteniendo constantes las demás variables del modelo. En la misma línea, la edad también aparece asociada positivamente: por cada año adicional, las chances aumentan alrededor de **1,04** veces.
-
-El estado civil tiene una diferencia especialmente marcada. Las personas clasificadas como `married` presentan chances mucho más altas de pertenecer al grupo de ingresos superiores a **$50.000 dólares** que las personas no casadas, con un odds ratio cercano a **10,5**. Este resultado debe leerse con cuidado, porque `marital_simple` agrupa varias situaciones en una categoría amplia de no casados; aun así, dentro del modelo, la diferencia aparece con mucha fuerza.
-
-Las variables de capital también tienen una asociación positiva. Tanto `log_capital_gain` como `log_capital_loss` aumentan las chances estimadas de ingresos altos. Esto tiene sentido porque capturan información económica adicional que no aparece directamente en las horas trabajadas o en el nivel educativo. En particular, `log_capital_gain` tiene un odds ratio aproximado de **1,23**, mientras que `log_capital_loss` se ubica cerca de **1,17**.
-
-También aparecen diferencias negativas en `native_country_simpleOther` y `race_simpleOther`. En ambos casos, el odds ratio es menor a 1, lo que indica menores chances de superar los **$50.000 dólares** anuales en comparación con las categorías de referencia, que son `United States` y `White`, respectivamente. En el caso del sexo, el efecto principal de `sexMale` no es estadísticamente significativo, por lo que no conviene interpretarlo como una diferencia clara por sí sola, especialmente porque el modelo incluye una interacción entre sexo y horas trabajadas.
+Los odds ratios permiten leer los coeficientes del modelo en términos de chances. Un valor superior a 1 indica mayores chances de tener ingresos superiores a **\$50.000 dólares**, manteniendo constantes las demás variables del modelo. Un valor inferior a 1 indica menores chances. En cambio, un valor cercano a 1 sugiere que la variable modifica poco las chances estimadas.
 
 ## Forest plot de odds ratios
 
@@ -924,7 +987,7 @@ ggplot(odds_ratios_plot, aes(y = termino_limpio)) +
   theme_minimal()
 ```
 
-El forest plot resume visualmente la misma información de la tabla anterior. La línea vertical en 1 marca el punto donde una variable no modificaría las chances de tener ingresos altos. Los términos ubicados a la derecha de esa línea se asocian con mayores chances; los ubicados a la izquierda, con menores chances. Además, los intervalos que cruzan la línea de 1 muestran efectos menos precisos o menos claros desde el punto de vista estadístico.
+El forest plot resume visualmente la dirección y la magnitud de las asociaciones estimadas en el Modelo 2. La línea vertical en 1 representa ausencia de cambio en las chances. Los puntos ubicados a la derecha de esa línea indican variables asociadas con mayores chances de tener ingresos altos; los puntos ubicados a la izquierda indican menores chances. Además, los intervalos que cruzan la línea de 1 muestran efectos menos precisos o menos claros desde el punto de vista estadístico.
 
 ## Variables significativas
 
@@ -963,7 +1026,7 @@ variables_significativas |>
   kable_styling(full_width = FALSE)
 ```
 
-Las variables significativas al 5% son las que muestran una asociación más clara con la probabilidad de tener ingresos altos dentro de este modelo. En conjunto, el resultado sugiere que los ingresos superiores a **$50.000 dólares** no se explican por una sola dimensión, sino por una combinación de educación, edad, estado civil, horas trabajadas, variables de capital y algunas características sociodemográficas.
+Las variables significativas al 5% son las que muestran una asociación más clara con la probabilidad de tener ingresos altos dentro de este modelo. En conjunto, los resultados sugieren que la probabilidad de superar los **\$50.000 dólares** anuales no se explica por una sola dimensión, sino por una combinación de educación, edad, estado civil, horas trabajadas, variables de capital y características sociodemográficas.
 
 ## Interpretación de la interacción
 
@@ -974,7 +1037,7 @@ Las variables significativas al 5% son las que muestran una asociación más cla
 
 # Separo el término de interacción para leerlo con más claridad.
 interaccion <- odds_ratios |> 
-  filter(term == "sexMale:hours_per_week") |> 
+  filter(str_detect(term, "sexMale") & str_detect(term, "hours_per_week")) |> 
   transmute(
     termino = termino_limpio,
     odds_ratio = odds_ratio,
@@ -1002,11 +1065,12 @@ interaccion |>
     caption = "Término de interacción del Modelo 2"
   ) |> 
   kable_styling(full_width = FALSE)
+
+interaccion_or <- interaccion |> pull(odds_ratio) |> first()
+interaccion_p <- interaccion |> pull(p_value) |> first()
 ```
 
-La interacción entre `sexMale` y `hours_per_week` tiene un odds ratio cercano a **1,01** y un p valor aproximado de **0,09**. Esto indica que, en el modelo, la relación entre horas trabajadas e ingresos altos parece ser apenas más positiva para los hombres que para las mujeres. Sin embargo, la evidencia no alcanza el umbral convencional del 5%, por lo que no conviene presentar esta diferencia como un resultado estadísticamente sólido.
-
-En términos sustantivos, la interacción era razonable como hipótesis: podía esperarse que una hora adicional de trabajo semanal no se tradujera del mismo modo en ingresos altos para hombres y mujeres. De todos modos, con esta especificación, el resultado es más bien débil. La interacción aporta una pregunta interesante, pero no cambia de manera contundente la interpretación general del modelo.
+La interacción entre `sexMale` y `hours_per_week` tiene un odds ratio de `r round(interaccion_or, 3)` y un p valor de `r format.pval(interaccion_p, digits = 3, eps = 0.001)`. Esto indica si la asociación entre horas trabajadas e ingresos altos cambia para los varones respecto de las mujeres, que son la categoría de referencia. Si el odds ratio de la interacción es mayor a 1, la pendiente de `hours_per_week` es más positiva para los varones; si es menor a 1, es menos positiva. De todos modos, la interpretación sustantiva debe considerar también el p valor y la magnitud del efecto, porque una diferencia muy pequeña puede no implicar una mejora relevante del modelo.
 
 # Comparación global de modelos
 
@@ -1084,20 +1148,18 @@ pseudo_m2 <- comparacion_modelos |>
 
 delta_aic <- aic_m2 - aic_m1
 delta_pseudo <- pseudo_m2 - pseudo_m1
-
-mejora_global <- aic_m2 < aic_m1 & pseudo_m2 > pseudo_m1
 ```
 
-La comparación global permite evaluar si vale la pena incorporar la interacción. El AIC del Modelo 1 es `r round(aic_m1, 3)`, mientras que el del Modelo 2 es `r round(aic_m2, 3)`. El pseudo R2 pasa de `r round(pseudo_m1, 4)` en el Modelo 1 a `r round(pseudo_m2, 4)` en el Modelo 2.
+La comparación global permite evaluar si la inclusión de la interacción mejora el ajuste del modelo. El AIC del Modelo 1 es `r round(aic_m1, 3)`, mientras que el AIC del Modelo 2 es `r round(aic_m2, 3)`. A su vez, el pseudo R2 pasa de `r round(pseudo_m1, 4)` en el Modelo 1 a `r round(pseudo_m2, 4)` en el Modelo 2.
 
-Aunque el Modelo 2 incorpora una hipótesis sustantiva razonable, la mejora global debe leerse con cautela. La interacción entre sexo y horas trabajadas no resulta significativa al 5%, y su odds ratio está muy cerca de 1. Por eso, incluso si el AIC o el pseudo R2 muestran una variación leve, la diferencia entre ambos modelos no parece modificar de manera importante la lectura sustantiva del problema.
+En términos generales, si el Modelo 2 reduce el AIC y aumenta el pseudo R2, la interacción mejora el ajuste global. En cambio, si el AIC aumenta o el pseudo R2 cambia de manera muy pequeña, la interacción no aporta una mejora sustantiva. En este caso, la decisión debe considerar tanto la comparación global como la interpretación del término interactivo: una interacción teóricamente razonable puede ser útil para explorar la hipótesis, pero no necesariamente mejora el modelo de manera relevante.
 
 # Conclusión
 
-El modelo logístico permite observar qué características se asocian con la probabilidad de superar los **$50.000 dólares** anuales en el dataset. Los resultados más claros aparecen en el nivel educativo, el estado civil, la edad, las horas trabajadas por semana y las variables de capital. En particular, el nivel educativo y el estado civil muestran asociaciones positivas muy marcadas, mientras que `native_country_simpleOther` y `race_simpleOther` aparecen asociados con menores chances de pertenecer al grupo de ingresos altos.
+El análisis permite identificar qué características sociodemográficas y laborales se asocian con la probabilidad de tener ingresos superiores a **\$50.000 dólares** anuales. Los resultados muestran que variables como el nivel educativo, la edad, el estado civil, las horas trabajadas por semana y las variables de capital se vinculan con diferencias importantes en la probabilidad estimada de pertenecer al grupo de ingresos altos.
 
-La transformación de `capital_gain` y `capital_loss` fue útil porque ambas variables tenían muchos valores en cero y algunos valores positivos muy altos. Al usar `log1p()`, esas variables pudieron incorporarse al modelo sin perder observaciones y reduciendo el peso de los valores extremos.
+La transformación de `capital_gain` y `capital_loss` mediante `log1p()` fue adecuada porque ambas variables presentan muchos valores en cero y algunos valores positivos muy altos. De esta forma, se redujo el peso de los valores extremos sin eliminar observaciones.
 
-La interacción entre `sex` y `hours_per_week` tenía sentido teórico, porque permitía evaluar si la relación entre horas trabajadas e ingresos altos cambiaba según el sexo. Sin embargo, en los resultados del Modelo 2, esa interacción es débil y no significativa al 5%. Por lo tanto, no hay suficiente evidencia para afirmar que la pendiente de `hours_per_week` sea claramente distinta entre hombres y mujeres.
+La interacción entre `sex` y `hours_per_week` tenía sentido teórico y quedó respaldada por una visualización bivariada previa, en la que se comparó la distribución de horas trabajadas por nivel de ingreso y sexo. Sin embargo, la comparación final entre modelos permite evaluar si esa interacción realmente mejora el ajuste global. Si la mejora en AIC y pseudo R2 es mínima, el Modelo 1 resulta más parsimonioso; si el Modelo 2 mejora ambos indicadores, entonces la interacción aporta información relevante.
 
-En síntesis, el Modelo 2 agrega una interacción interesante desde el punto de vista sustantivo, pero no cambia de forma fuerte la interpretación general. El análisis sugiere que los ingresos altos están asociados principalmente con educación, estado civil, edad, horas trabajadas y variables de capital. De todos modos, estos resultados deben leerse como asociaciones estadísticas y no como efectos causales, porque el trabajo no utiliza un diseño experimental ni una estrategia de identificación causal.
+En cualquier caso, los resultados deben interpretarse como asociaciones estadísticas y no como efectos causales. El modelo permite describir patrones y estimar relaciones condicionales entre variables, pero no utiliza una estrategia de identificación causal ni un diseño experimental.
